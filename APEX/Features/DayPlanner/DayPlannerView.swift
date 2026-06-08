@@ -8,19 +8,23 @@ struct DayPlannerView: View {
     @State private var showAddTask = false
     @State private var showAddSection = false
     @State private var selectedSection: DaySection?
+    @State private var editTask: APEXTask?
 
     var body: some View {
         NavigationStack {
             ZStack {
                 Color.apexBackground.ignoresSafeArea()
-
                 VStack(spacing: 0) {
-                    // Week calendar
+                    // Wochenkalender
                     WeekCalendarStrip(selectedDate: $selectedDate)
                         .padding(.vertical, Spacing.sm)
                         .background(.ultraThinMaterial)
 
-                    // Sections list
+                    // Tagesübersicht
+                    tagesfortschritt
+                        .apexPadding()
+                        .padding(.top, Spacing.sm)
+
                     ScrollView {
                         LazyVStack(spacing: Spacing.md) {
                             ForEach(sections) { section in
@@ -30,40 +34,43 @@ struct DayPlannerView: View {
                                     onAddTask: {
                                         selectedSection = section
                                         showAddTask = true
+                                    },
+                                    onEditTask: { task in
+                                        editTask = task
                                     }
                                 )
                                 .apexPadding()
                             }
 
-                            // Add section button
-                            Button {
-                                showAddSection = true
-                            } label: {
-                                HStack {
-                                    Image(systemName: "plus.circle.fill")
-                                    Text("Bereich hinzufügen")
-                                }
-                                .font(.apexBody)
-                                .foregroundStyle(.apexCyan)
-                                .frame(maxWidth: .infinity)
-                                .padding(Spacing.md)
-                                .background {
-                                    RoundedRectangle(cornerRadius: Radius.lg)
-                                        .stroke(Color.apexCyan.opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [6]))
-                                }
-                            }
-                            .padding(.horizontal, Spacing.md)
+                            neuerBereichButton
+                                .padding(.horizontal, Spacing.md)
                         }
-                        .padding(.top, Spacing.md)
+                        .padding(.top, Spacing.sm)
                         .padding(.bottom, 100)
                     }
                 }
             }
-            .navigationTitle("Tagesplaner")
-            .sheet(isPresented: $showAddTask) {
-                if let section = selectedSection {
-                    TaskEditorView(section: section, date: selectedDate)
+            .navigationTitle("Tagesplan")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    HStack(spacing: Spacing.sm) {
+                        NavigationLink(destination: KalenderView()) {
+                            Image(systemName: "calendar").foregroundStyle(.apexCyan)
+                        }
+                        Button { showAddSection = true } label: {
+                            Image(systemName: "plus.circle.fill").foregroundStyle(.apexCyan)
+                        }
+                    }
                 }
+            }
+            .sheet(isPresented: $showAddTask) {
+                if let s = selectedSection {
+                    TaskEditorView(section: s, date: selectedDate)
+                }
+            }
+            .sheet(item: $editTask) { task in
+                TaskEditorView(section: task.section ?? sections.first!, date: selectedDate, existingTask: task)
             }
             .sheet(isPresented: $showAddSection) {
                 SectionEditorView()
@@ -74,111 +81,180 @@ struct DayPlannerView: View {
         }
     }
 
+    // MARK: - Tagesfortschritt
+    private var tagesfortschritt: some View {
+        let dayTasks = allTasksForDate(selectedDate)
+        let done = dayTasks.filter(\.isCompleted).count
+        let total = dayTasks.count
+        let progress: Double = total > 0 ? Double(done) / Double(total) : 0
+
+        return GlassCard(padding: Spacing.sm) {
+            HStack(spacing: Spacing.md) {
+                SmallRingView(progress: progress, color: .apexCyan, size: 44, lineWidth: 5)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(selectedDate.isSameDay(as: Date()) ? "Heute" : selectedDate.formatted(.dateTime.weekday(.wide).day().month()))
+                        .font(.apexCallout).foregroundStyle(.apexTextSecondary)
+                    Text(total == 0 ? "Keine Aufgaben" : "\(done) von \(total) erledigt")
+                        .font(.apexHeadline).foregroundStyle(.apexTextPrimary)
+                }
+
+                Spacer()
+
+                // Kategorie-Schnellübersicht
+                HStack(spacing: 6) {
+                    categoryBadge(category: .supplement, tasks: dayTasks)
+                    categoryBadge(category: .skincare, tasks: dayTasks)
+                    categoryBadge(category: .training, tasks: dayTasks)
+                }
+            }
+        }
+    }
+
+    private func categoryBadge(category: TaskCategory, tasks: [APEXTask]) -> some View {
+        let filtered = tasks.filter { $0.category == category }
+        guard !filtered.isEmpty else { return AnyView(EmptyView()) }
+        let done = filtered.filter(\.isCompleted).count
+        let allDone = done == filtered.count
+
+        return AnyView(
+            VStack(spacing: 2) {
+                Image(systemName: category.icon)
+                    .font(.system(size: 12))
+                    .foregroundStyle(allDone ? .apexGreen : .apexTextTertiary)
+                Text("\(done)/\(filtered.count)")
+                    .font(.system(size: 8))
+                    .foregroundStyle(.apexTextTertiary)
+            }
+        )
+    }
+
+    private func allTasksForDate(_ date: Date) -> [APEXTask] {
+        sections.flatMap { $0.tasks }.filter {
+            $0.date.isSameDay(as: date) ||
+            ($0.isRepeating && $0.repeatDays.contains(date.weekday ?? .monday))
+        }
+    }
+
+    private var neuerBereichButton: some View {
+        Button { showAddSection = true } label: {
+            HStack {
+                Image(systemName: "plus.circle.fill")
+                Text("Bereich hinzufügen")
+            }
+            .font(.apexBody).foregroundStyle(.apexCyan)
+            .frame(maxWidth: .infinity).padding(Spacing.md)
+            .background {
+                RoundedRectangle(cornerRadius: Radius.lg)
+                    .stroke(Color.apexCyan.opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [6]))
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
     private func createDefaultSections() {
-        for sectionData in AppConfiguration.defaultSections {
-            let section = DaySection(
-                name: sectionData.name,
-                icon: sectionData.icon,
-                sortOrder: sectionData.sortOrder,
-                colorHex: sectionData.colorHex
-            )
-            context.insert(section)
+        for sd in AppConfiguration.defaultSections {
+            context.insert(DaySection(name: sd.name, icon: sd.icon, sortOrder: sd.sortOrder, colorHex: sd.colorHex))
         }
         try? context.save()
     }
 }
 
-// MARK: - Day Section Card
+// MARK: - DaySectionCard
 struct DaySectionCard: View {
     @Environment(\.modelContext) private var context
     @Bindable var section: DaySection
     var selectedDate: Date
     var onAddTask: () -> Void
+    var onEditTask: (APEXTask) -> Void
 
     @State private var isExpanded = true
     @State private var showEditSection = false
 
     private var tasksForDate: [APEXTask] {
         section.tasks
-            .filter { $0.date.isSameDay(as: selectedDate) || ($0.isRepeating && $0.repeatDays.contains(selectedDate.weekday ?? .monday)) }
+            .filter {
+                $0.date.isSameDay(as: selectedDate) ||
+                ($0.isRepeating && $0.repeatDays.contains(selectedDate.weekday ?? .monday))
+            }
             .sorted { $0.createdAt < $1.createdAt }
     }
+
+    private var completedCount: Int { tasksForDate.filter(\.isCompleted).count }
+    private var totalCount: Int { tasksForDate.count }
 
     var body: some View {
         GlassCard(padding: 0) {
             VStack(spacing: 0) {
-                // Section header
+                // Header
                 Button {
-                    withAnimation(.spring(response: 0.3)) { isExpanded.toggle() }
+                    withAnimation(.spring(response: 0.35)) { isExpanded.toggle() }
                 } label: {
                     HStack(spacing: Spacing.sm) {
-                        Image(systemName: section.icon)
-                            .font(.callout)
-                            .foregroundStyle(Color(hex: section.colorHex))
-                            .frame(width: 24)
-
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color(hex: section.colorHex).opacity(0.18))
+                                .frame(width: 32, height: 32)
+                            Image(systemName: section.icon)
+                                .font(.callout)
+                                .foregroundStyle(Color(hex: section.colorHex))
+                        }
                         Text(section.name)
-                            .font(.apexHeadline)
-                            .foregroundStyle(.apexTextPrimary)
-
+                            .font(.apexHeadline).foregroundStyle(.apexTextPrimary)
                         Spacer()
-
-                        Text("\(tasksForDate.filter(\.isCompleted).count)/\(tasksForDate.count)")
-                            .font(.apexCaption)
-                            .foregroundStyle(.apexTextTertiary)
-
+                        if totalCount > 0 {
+                            Text("\(completedCount)/\(totalCount)")
+                                .font(.apexCaption).foregroundStyle(.apexTextTertiary)
+                        }
                         Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                            .font(.caption)
-                            .foregroundStyle(.apexTextTertiary)
+                            .font(.caption).foregroundStyle(.apexTextTertiary)
                     }
                     .padding(Spacing.md)
                 }
                 .buttonStyle(.plain)
                 .contextMenu {
                     Button("Bearbeiten") { showEditSection = true }
-                    Button("Aufgabe hinzufügen") { onAddTask() }
+                    Button("Aufgabe hinzufügen", action: onAddTask)
                     Divider()
                     Button("Löschen", role: .destructive) { context.delete(section) }
                 }
 
                 if isExpanded {
-                    Divider().background(.white.opacity(0.06))
+                    Divider().background(.white.opacity(0.05))
 
                     if tasksForDate.isEmpty {
-                        HStack {
-                            Text("Keine Aufgaben")
-                                .font(.apexCaption)
-                                .foregroundStyle(.apexTextTertiary)
-                            Spacer()
-                            Button(action: onAddTask) {
-                                Image(systemName: "plus")
-                                    .font(.callout)
-                                    .foregroundStyle(.apexCyan)
+                        Button(action: onAddTask) {
+                            HStack {
+                                Image(systemName: "plus.circle").font(.callout).foregroundStyle(.apexCyan.opacity(0.6))
+                                Text("Aufgabe hinzufügen")
+                                    .font(.apexCallout).foregroundStyle(.apexTextTertiary)
+                                Spacer()
                             }
+                            .padding(Spacing.md)
                         }
-                        .padding(Spacing.md)
+                        .buttonStyle(.plain)
                     } else {
                         VStack(spacing: 0) {
                             ForEach(tasksForDate) { task in
-                                TaskRow(task: task, onDelete: { context.delete(task) })
-                                    .padding(.horizontal, Spacing.md)
+                                TaskRow(
+                                    task: task,
+                                    onDelete: { context.delete(task) },
+                                    onEdit: { onEditTask(task) }
+                                )
+                                .padding(.horizontal, Spacing.md)
                                 if task.id != tasksForDate.last?.id {
-                                    Divider().background(.white.opacity(0.05)).padding(.leading, 60)
+                                    Divider().background(.white.opacity(0.04)).padding(.leading, 56)
                                 }
                             }
-
-                            // Add task button
                             Button(action: onAddTask) {
                                 HStack {
-                                    Image(systemName: "plus.circle")
-                                        .font(.callout)
+                                    Image(systemName: "plus").font(.caption).foregroundStyle(.apexCyan.opacity(0.7))
                                     Text("Aufgabe hinzufügen")
-                                        .font(.apexCallout)
+                                        .font(.apexCaption).foregroundStyle(.apexCyan.opacity(0.7))
                                 }
-                                .foregroundStyle(.apexCyan.opacity(0.7))
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.horizontal, Spacing.md)
-                                .padding(.vertical, Spacing.sm)
+                                .padding(.vertical, 10)
                             }
                             .buttonStyle(.plain)
                         }
@@ -186,8 +262,6 @@ struct DaySectionCard: View {
                 }
             }
         }
-        .sheet(isPresented: $showEditSection) {
-            SectionEditorView(section: section)
-        }
+        .sheet(isPresented: $showEditSection) { SectionEditorView(section: section) }
     }
 }
