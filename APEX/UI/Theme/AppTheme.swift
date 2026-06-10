@@ -95,6 +95,28 @@ enum Radius {
     static let pill: CGFloat = 100
 }
 
+// MARK: - ShapeStyle extensions (enables .foregroundStyle(.apexCyan) etc.)
+extension ShapeStyle where Self == Color {
+    static var apexCyan:          Color { .apexCyan }
+    static var apexBlue:          Color { .apexBlue }
+    static var apexPurple:        Color { .apexPurple }
+    static var apexGreen:         Color { .apexGreen }
+    static var apexOrange:        Color { .apexOrange }
+    static var apexRed:           Color { .apexRed }
+    static var apexYellow:        Color { .apexYellow }
+    static var apexBackground:    Color { .apexBackground }
+    static var apexSurface:       Color { .apexSurface }
+    static var apexCard:          Color { .apexCard }
+    static var apexTextPrimary:   Color { .apexTextPrimary }
+    static var apexTextSecondary: Color { .apexTextSecondary }
+    static var apexTextTertiary:  Color { .apexTextTertiary }
+}
+
+extension ShapeStyle where Self == LinearGradient {
+    static var apexAccentGradient: LinearGradient { .init(colors: [.apexCyan, .apexBlue], startPoint: .topLeading, endPoint: .bottomTrailing) }
+    static var apexDarkGradient:   LinearGradient { .init(colors: [Color(hex: "#0A0A0F"), Color(hex: "#12121A")], startPoint: .top, endPoint: .bottom) }
+}
+
 // MARK: - Shadow
 extension View {
     func apexShadow(color: Color = .apexCyan, radius: CGFloat = 20) -> some View {
